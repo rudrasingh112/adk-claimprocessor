@@ -3,7 +3,7 @@ import uuid
 import vertexai
 import asyncio
 from dotenv import load_dotenv
-from google.adk import agents,  runners
+from google.adk.agents import Agent, SequentialAgent
 from google.adk.sessions import VertexAiSessionService, Session
 from vertexai import agent_engines 
 from google.adk.apps.app import App, EventsCompactionConfig
@@ -12,6 +12,7 @@ from google.adk.runners import Runner
 from google.adk.memory import VertexAiMemoryBankService
 from google.genai.types import Part, Content
 from google.adk.tools.load_memory_tool import LoadMemoryTool 
+from .subagents import insurance_seller_agent, faq_agent, claims_processing_agent
 
 
 
@@ -26,23 +27,26 @@ user_id = 'rud'
 agent_engine_id = "projects/736907218290/locations/us-central1/reasoningEngines/412394595888083763"
 
 # --- 1. TOOLS ---
-def calculate_payout(claim_amount: float, deductible: float) -> float:
-    """Calculates the final insurance payout after the deductible."""
-    return max(0, claim_amount - deductible)
+
 
 # --- 2. AGENT DEFINITION ---
 # This is the "Brain" of your project
-root_agent = agents.Agent(
-    name="claims_processor",
-    model="gemini-2.0-flash",
+root_agent = Agent(
+    name="insurance_company",
+    model= "gemini-2.0-flash",
+    description="Deligate the user to different sub agent on the basis of the usecase",
     instruction="""
-    You are a professional Insurance Claims Agent. 
-    1. Use 'calculate_payout' tool to determine money owed to users.
-    2. Use 'LoadMemoryTool' to look up previous user claims or deductible history.
-    3. Be polite and professional.
+    You are a Yogesh Insurance company chatbot.
+    1. Always greet the user in a polite manner.
+    2. Ask them how can you be of any help.
+    3. Understant the user intent and deligate them to the different task as required.
+    4. You can handle request related to buying insurance, filing a claim and faq related to claims.
+
     """,
-    tools=[calculate_payout, LoadMemoryTool()]
+    sub_agents=[insurance_seller_agent,claims_processing_agent, faq_agent]
 )
+
+
 
 # --- 3. SESSION & RUNNER ---
 # VertexAIInMemorySessionService stores sessions in the cloud's memory
@@ -53,7 +57,7 @@ root_agent = agents.Agent(
 # Configure Context caching
 
 app_config = App(
-    name = "claims_processor",
+    name = "insurance_company",
     root_agent=root_agent,
     context_cache_config= ContextCacheConfig(
         min_tokens =2048,
@@ -76,7 +80,9 @@ def get_memory_service():
 
 agent = agent_engines.AdkApp(agent = app_config,
                              session_service_builder=get_session_service,
-                             memory_service_builder=get_memory_service)
+                             memory_service_builder=get_memory_service,
+                             enable_tracing=True
+                             )
 
 # async def run_scenerio():
 #     runner = Runner(app= app, session_service= session_service, memory_service= memory_service)
